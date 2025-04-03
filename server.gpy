@@ -1,0 +1,94 @@
+#!/usr/bin/env python3
+"""
+Example client for the MCP Git Server
+"""
+
+import json
+import socket
+import sys
+
+def send_command(host, port, command, params=None):
+    """
+    Send a command to the MCP Git Server.
+    
+    Args:
+        host: Server hostname
+        port: Server port
+        command: Git command to execute
+        params: Command parameters (dict)
+        
+    Returns:
+        Server response as a dictionary
+    """
+    if params is None:
+        params = {}
+        
+    # Create request message
+    request = {
+        "command": command,
+        "params": params
+    }
+    
+    # Connect to server
+    client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    
+    try:
+        client.connect((host, port))
+        
+        # Serialize and send request
+        request_json = json.dumps(request).encode('utf-8')
+        length = len(request_json).to_bytes(4, byteorder='big')
+        client.sendall(length + request_json)
+        
+        # Receive response length
+        response_len_bytes = client.recv(4)
+        response_len = int.from_bytes(response_len_bytes, byteorder='big')
+        
+        # Receive response data
+        response_data = b""
+        while len(response_data) < response_len:
+            chunk = client.recv(min(4096, response_len - len(response_data)))
+            if not chunk:
+                break
+            response_data += chunk
+            
+        # Parse response
+        response = json.loads(response_data.decode('utf-8'))
+        return response
+        
+    finally:
+        client.close()
+
+def main():
+    """Main entry point for the example client."""
+    if len(sys.argv) < 2:
+        print("Usage: client.py <command> [params]")
+        print("Example: client.py status")
+        print("Example: client.py log '{\"count\": 5}'")
+        sys.exit(1)
+        
+    command = sys.argv[1]
+    params = {}
+    
+    if len(sys.argv) > 2:
+        try:
+            params = json.loads(sys.argv[2])
+        except json.JSONDecodeError:
+            print("Error: Invalid JSON parameters")
+            sys.exit(1)
+    
+    try:
+        response = send_command("localhost", 9876, command, params)
+        
+        # Pretty print the response
+        print(json.dumps(response, indent=2))
+        
+    except ConnectionRefusedError:
+        print("Error: Could not connect to the server")
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
